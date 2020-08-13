@@ -1,84 +1,63 @@
-const router = require('express').Router(),
-      axios = require('axios').default;
+const router = require('express').Router();
+const redis = require('redis');
+const redis_client = redis.createClient();
+const { promisify } = require('util');
+const hgetallAsync = promisify(redis_client.hgetall).bind(redis_client);
+const smembersAsync = promisify(redis_client.smembers).bind(redis_client);
+const utils = require('../../utils');
 
-// TODO: avoid committing secrets to git!!!
-const store1 = {
-  endpoint: 'https://cymbiointerviewstore1.myshopify.com/',
-  user: '734b2b15f6ab57cdc1f717c7f959e9b6',
-  passwd: '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'
+
+function to_numbers(object) {
+  return utils.objectMap(object, parseInt);
 }
 
-const store2 = {
-  endpoint: 'https://cymbiointerviewstore2.myshopify.com/',
-  user: '22f7057600d5c76f36f31cf453e211ca',
-  passwd: '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'
-}
-
-const store1_api = axios.create({
-  baseURL: store1.endpoint,
-  timeout: 1000,
-  auth: {
-    username: store1.user,
-    password: store1.passwd
-  }
-});
-
-const store2_api = axios.create({
-  baseURL: store2.endpoint,
-  timeout: 1000,
-  auth: {
-    username: store2.user,
-    password: store2.passwd
-  }
-});
-
-const stores = {
-  store1: store1_api,
-  store2: store2_api
-}
-
-
-function process_products(data) {
-  let result = []
-  data['products'].forEach((product) => {
-    product['variants'].forEach((variant) => {
-      const record = {
-        SKU: variant['sku'],
-        amount: variant['inventory_quantity']
+function sum_objects(objs) {
+  return objs.reduce((a, b) => {
+    for (let k in b) {
+      if (b.hasOwnProperty(k)) {
+        a[k] = (a[k] || 0) + b[k];
       }
-      result.push(record)
-    })
-  });
+    }
+    return a;
+  }, {});
+}
 
+
+function sku_list(object) {
+  let result = [];
+  for (let sku in object) {
+    if (object.hasOwnProperty(sku)) {
+      result.push({"SKU": sku, "amount": object[sku]});
+    }
+  }
   return result;
 }
 
-async function get_inventory_for_store(store) {
-  const response = await store.get('/admin/api/2020-07/products.json');
-  return process_products(response.data);
-}
 
 router.get('/inventory', async function(req, res) {
-  const data = await Promise.all([
-      get_inventory_for_store(store1_api),
-      get_inventory_for_store(store2_api)
-  ]);
+  const store_names_list = await smembersAsync('store_list');
+  console.log(`store_list ${store_names_list}`);
+  const tasks = store_names_list.map((store_name) => {
+    return hgetallAsync(store_name);
+  });
 
-  // TODO: merge the two stores data
-  res.json(data);
+  const sku_hashes = await Promise.all(tasks);
+  const sku_amounts = sku_hashes.map(to_numbers);
+  const summed_skus = sum_objects(sku_amounts);
+  res.json(sku_list(summed_skus));
 });
 
+
 router.get('/:store/inventory', async function(req, res) {
-  // TODO: handle pagination
   const store_name = req.params['store']
-  if (store_name in stores) {
-    const inventory_data = get_inventory_for_store(stores[store_name]);
-    res.json(await inventory_data)
-  } else {
+  const redis_result = await hgetallAsync(store_name);
+  if (redis_result === null) {
     res.status(404);
     res.json({
-      error: 'store not found'
+      error: `store ${store_name} not found`
     });
+  } else {
+    res.json(sku_list(to_numbers(redis_result)));
   }
 });
 
