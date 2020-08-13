@@ -6,6 +6,7 @@ const hsetAsync = promisify(redis_client.hset).bind(redis_client);
 const saddAsync = promisify(redis_client.sadd).bind(redis_client);
 const flushallAsync = promisify(redis_client.flushall).bind(redis_client);
 const utils = require('./utils');
+const config = require('./config.json')
 
 redis_client.on("error", function(error) {
     console.error(error);
@@ -14,23 +15,8 @@ redis_client.on("error", function(error) {
 // sync to redis every 60 seconds
 const sync_interval = 1000 * 60;
 
-// TODO: avoid committing secrets to git!!!
-const store1 = {
-    endpoint: 'https://cymbiointerviewstore1.myshopify.com/',
-    user: '734b2b15f6ab57cdc1f717c7f959e9b6',
-    passwd: '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'
-}
 
-const store2 = {
-    endpoint: 'https://cymbiointerviewstore2.myshopify.com/',
-    user: '22f7057600d5c76f36f31cf453e211ca',
-    passwd: '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'
-}
-
-const stores = {
-    store1: store1,
-    store2: store2
-}
+const stores = config['stores'];
 
 const store_apis = utils.objectMap(stores, (store) => {
     return axios.create({

@@ -1,13 +1,8 @@
-const http = require('http'),
-      path = require('path'),
-      methods = require('methods'),
-      express = require('express'),
+const express = require('express'),
       bodyParser = require('body-parser'),
-      session = require('express-session'),
       cors = require('cors'),
-      errorhandler = require('errorhandler')
-
-require('./sync_from_shopify');
+      errorhandler = require('errorhandler'),
+      stub = require('./sync_from_shopify');
 
 const isProduction = process.env.NODE_ENV === 'production';
 
@@ -23,8 +18,6 @@ app.use(bodyParser.json());
 
 app.use(require('method-override')());
 app.use(express.static(__dirname + '/public'));
-
-app.use(session({ secret: 'conduit', cookie: { maxAge: 60000 }, resave: false, saveUninitialized: false  }));
 
 if (!isProduction) {
   app.use(errorhandler());
